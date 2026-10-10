@@ -1,0 +1,48 @@
+# Local secrets; commit examples only.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets/
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Data, models, experiments, and local scratch work
+data/
+artifacts/
+checkpoints/
+models/
+runs/
+mlruns/
+wandb/
+work/
+outputs/
+*.wav
+*.flac
+*.mp3
+*.mp4
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Machine-specific and agent settings
+.DS_Store
+.idea/
+.codex/
+*.log
