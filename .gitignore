@@ -48,4 +48,5 @@ outputs/
 .DS_Store
 .idea/
 .codex/
+LOCAL_GIT_COMMANDS.md
 *.log
