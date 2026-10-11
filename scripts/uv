@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+export UV_CACHE_DIR="$project_root/.cache/uv"
+export UV_PYTHON_INSTALL_DIR="$project_root/.python"
+export UV_PYTHON_BIN_DIR="$project_root/.python/bin"
+
+exec "$project_root/.tools/bin/uv" "$@"

@@ -1,0 +1,62 @@
+#!/bin/sh
+set -eu
+
+usage() {
+    printf 'Usage: scripts/commit "commit message" FILE [FILE ...]\n' >&2
+}
+
+if [ "$#" -lt 2 ]; then
+    usage
+    exit 2
+fi
+
+commit_message=$1
+shift
+
+if [ -z "$(printf '%s' "$commit_message" | tr -d '[:space:]')" ]; then
+    printf 'Error: the commit message cannot be empty.\n' >&2
+    exit 2
+fi
+
+if [ ! -t 0 ]; then
+    printf 'Error: this command requires an interactive terminal.\n' >&2
+    exit 2
+fi
+
+project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$project_root"
+
+if ! git diff --cached --quiet; then
+    printf 'Error: changes are already staged. Review or unstage them first.\n' >&2
+    printf 'To unstage without discarding edits: git restore --staged FILE\n' >&2
+    exit 1
+fi
+
+scripts/check
+git add --dry-run -- "$@"
+git add -- "$@"
+
+if git diff --cached --quiet; then
+    printf 'Nothing was staged; no commit was created.\n'
+    exit 1
+fi
+
+git diff --cached --check
+
+printf '\nProposed commit\n'
+git status --short
+git diff --cached
+
+printf '\nCreate commit %s? [y/N] ' "$commit_message"
+read -r answer
+
+case $answer in
+    y | Y | yes | YES | Yes)
+        git commit -m "$commit_message"
+        ;;
+    *)
+        printf 'Commit cancelled. Files remain staged for review.\n'
+        printf 'To unstage without discarding edits: git restore --staged FILE\n'
+        exit 1
+        ;;
+esac

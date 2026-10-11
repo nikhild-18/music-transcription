@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$project_root"
+
+scripts/check
+git diff --check
+
+printf '\nWorking tree\n'
+git status --short --branch
+
+printf '\nUnstaged changes\n'
+git diff
+
+if ! git diff --cached --quiet; then
+    printf '\nStaged changes\n'
+    git diff --cached
+fi

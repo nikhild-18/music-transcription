@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$project_root"
+
+scripts/uv run --frozen ruff check .
+scripts/uv run --frozen pytest
+git ls-files -co --exclude-standard -z \
+    | xargs -0 scripts/uv run --frozen detect-secrets-hook --no-verify

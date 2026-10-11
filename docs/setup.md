@@ -9,6 +9,11 @@
 - Added a file-preservation working agreement and initial ignore rules before adding project code or dependencies.
 - Configured repository-local Git identity using the verified GitHub username and ID-based noreply address; global Git settings were preserved.
 - Checked that ignore rules cover sample secret, virtual environment, data, checkpoint, and scratch paths.
+- Verified that the active task can write only inside this repository and necessary system temporary directories. Disposable write probes succeeded in those locations and were removed.
+- Installed uv 0.13.0 as an unmanaged repository-local tool under the ignored `.tools/` directory; no shell profile or global path was changed.
+- Installed CPython 3.11.17 under the ignored `.python/` directory and created an isolated `.venv/`.
+- Added `pyproject.toml`, `.python-version`, and a `uv.lock` intended for commit for reproducible local tooling.
+- Added Ruff, pytest, and detect-secrets checks. Linting and the setup smoke test pass, and a temporary synthetic secret fixture is correctly rejected.
 
 ## Existing tools observed
 
@@ -21,16 +26,36 @@
 | Default Python | 3.8.5 |
 | Conda | 4.14.0 |
 | Docker | Desktop 3.4.0 / CLI 20.10.7; not needed for the initial local setup |
-| uv, Azure CLI, FFmpeg | Not found on the paths checked during the initial audit |
+| uv | 0.13.0, repository-local via `scripts/uv` |
+| Azure CLI, FFmpeg | Not found on the paths checked during the initial audit |
+
+## Local workflow
+
+Run project commands through `scripts/uv`. The wrapper redirects uv's cache and
+managed Python directories into ignored repository paths, avoiding user-level
+configuration and storage.
+
+```sh
+scripts/uv sync --frozen
+scripts/check
+```
+
+`--frozen` tells uv to reproduce `uv.lock` without silently changing dependency
+versions. Use a deliberate, reviewed lock operation when dependencies change.
+
+The managed Python interpreter passed import checks for native standard-library
+modules. uv could not patch one dynamic-library install name because Apple Command
+Line Tools are absent. Prebuilt development-tool wheels work; installing the
+system-wide tools should be considered separately if a future package must compile
+a native extension.
 
 ## Next checkpoints
 
-- Register only this repository as a local Codex project and open it in VS Code.
-- Verify effective write permissions. The setup task originally has broader access to the Codex documents directory; this file does not change that policy.
-- Retire the obsolete Documents-level trusted-project setting without changing unrelated settings.
-- Install uv and a project-specific Python version after reviewing compatibility. Python 3.11 is provisional until the chosen baseline's requirements are checked.
-- Create pyproject.toml, a project virtual environment, and a committed lockfile. Keep ML-only dependencies separate from lightweight local dependencies.
-- Add linting, tests, and secret scanning; verify using harmless fixtures.
+- Confirm only this repository is registered as the local Codex project and open it in VS Code.
+- Retire the obsolete Documents-level trusted-project setting without changing unrelated settings; this requires separately authorized user-level configuration access.
+- Define the transcription scope, output representation, evaluation datasets, metrics, and held-out split.
+- Select and record the first baseline. Python 3.11 is compatible with the current Basic Pitch metadata, but no model dependency has been added yet.
+- Keep ML-only dependencies separate from lightweight local dependencies.
 - Validate local GitHub authentication and create a private remote repository.
 - Verify Azure credit offer, expiry, service eligibility, region and quota. Configure cost controls before provisioning compute.
 
@@ -46,5 +71,7 @@
 ## References
 
 - [uv projects](https://docs.astral.sh/uv/guides/projects/)
+- [uv installer options](https://docs.astral.sh/uv/reference/installer/)
 - [Codex permissions](https://learn.chatgpt.com/docs/permissions)
 - [Intel macOS PyTorch build deprecation](https://dev-discuss.pytorch.org/t/pytorch-macos-x86-builds-deprecation-starting-january-2024/1690)
+- [Basic Pitch project metadata](https://github.com/spotify/basic-pitch/blob/main/pyproject.toml)
