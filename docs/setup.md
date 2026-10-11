@@ -81,11 +81,46 @@ Split plans are not yet benchmark splits: audit pretrained checkpoint exposure
 Notes crossing excerpt boundaries retain original timing; the future YourMT3+
 adapter must encode continuing notes without inventing note onsets.
 
-Remaining pre-GPU work:
+### Extraction and annotation readers
 
-1. Safely extract into a new ignored output directory, retaining original archives.
-2. Implement dataset-specific annotation readers: FiloBass fully aligned MIDI,
-   IDMT single-track labels, BabySlakh bass stems paired with per-stem MIDI.
+The local reader environment now includes locked Mido, PyYAML, SoundFile and
+NumPy dependencies. These are separate from the future Linux GPU training stack.
+
+```sh
+scripts/uv run --frozen python -m bass_pipeline.prepare extract
+scripts/uv run --frozen python -m bass_pipeline.prepare manifest
+```
+
+Defaults are `data/extracted/v1` and `data/processed/v1`; both are ignored by Git.
+Existing destinations are refused, not overwritten. For a later deliberate rerun,
+use a new `--output data/processed/v2` or `--extracted data/extracted/v2`.
+Failed/incomplete directories are retained for inspection, not automatically removed.
+
+Extraction verifies checksums, validates paths, rejects links, checks free space,
+and writes a completion marker only after successful copying. Original archives
+are unchanged. The manifest command requires successful extraction markers.
+
+Readers use FiloBass fully aligned MIDI, IDMT XML note events (retaining technique
+metadata), and BabySlakh bass-class stems paired with their individual MIDI files.
+MIDI tempo changes and zero-velocity note-offs are handled. Ambiguous overlapping
+same-pitch MIDI notes, unmatched events, and unsupported time formats are rejected
+rather than repaired silently. MIDI sustain pedals are not interpreted.
+
+Audio is fully decoded in bounded blocks, checking finite samples and frame
+counts. Notes extending more than 50 ms beyond audio are quarantined. This is a
+structural check, not proof of perceptual onset alignment. No audio is resampled,
+normalized, denoised, or augmented. FiloBass instrument type remains unknown pending
+curation; BabySlakh is explicitly synthetic. Metadata/file disagreements are flagged.
+
+Generated files include `manifest.json`, one note JSON array per accepted recording,
+`report.json` with rejections, and `provenance.json` with extraction hashes,
+configuration and Git state. No dataset contents are committed. All splits remain
+unset pending curation and pretrained-data overlap review.
+
+Remaining pre-GPU work (readers and extraction are now implemented):
+
+1. Review the real-data validation report and explicitly resolve quarantined items.
+2. Inspect dataset licenses, bass types, techniques and duplicate song identities.
 3. Validate audio headers, note ranges, timing alignment and bass selection;
    inspect/listen to representative recordings before freezing manifests.
 4. Pin one upstream checkpoint/configuration and implement its data adapter.
