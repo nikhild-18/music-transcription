@@ -17,7 +17,8 @@ resource has been created for this project.
 
 Local development uses VS Code and an isolated Python environment. Current PyTorch workloads will run on Linux in Azure because official modern PyTorch builds do not support this workstation's Intel macOS architecture.
 
-See [the setup record](docs/setup.md) and [the working agreement](AGENTS.md).
+See [the setup record](docs/setup.md), [the bass transcription task
+specification](docs/task-spec.md), and [the working agreement](AGENTS.md).
 
 ## Local checks
 

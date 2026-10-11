@@ -1,0 +1,48 @@
+# Model family is locked; exact checkpoint and matching frontend are not yet pinned.
+schema_version = "1.0"
+model_family = "YourMT3+"
+checkpoint = "UNSELECTED"
+
+[split]
+# Provisional planning ratios, applied independently within each dataset.
+seed = 20261010
+train = 0.70
+validation = 0.15
+test = 0.15
+pretraining_overlap_audited = false
+
+[excerpts]
+# Analysis experiments only: the model adapter must honor checkpoint input length.
+durations_seconds = [2.0, 5.0, 10.0]
+include_short_tail = true
+
+[evaluation]
+onset_tolerances_ms = [25, 50, 100]
+primary_onset_tolerance_ms = 50
+
+[preprocessing]
+mono = true
+peak_normalize = false
+# Preserve originals. Native sample rate/frontend will be pinned with checkpoint.
+resample_enabled = false
+denoise_enabled = false
+
+[augmentation]
+# No waveform transformations until labels and adapters are validated.
+enabled = false
+jazz_experiments_enabled = false
+
+[[archives]]
+dataset = "filobass"
+path = "data/raw/filobass/FiloBass_v1.0.0.zip"
+md5 = "ea1f52ffd492bf3654d720529f15bd9b" # pragma: allowlist secret (public checksum)
+
+[[archives]]
+dataset = "idmt_single_track"
+path = "data/raw/idmt_single_track/IDMT-SMT-BASS-SINGLE-TRACKS.zip"
+md5 = "c85540c664e8b13badd86880bacf11fa" # pragma: allowlist secret (public checksum)
+
+[[archives]]
+dataset = "babyslakh"
+path = "data/raw/babyslakh/babyslakh_16k.tar.gz"
+md5 = "311096dc2bde7d61c97e930edbfc7f78" # pragma: allowlist secret (public checksum)

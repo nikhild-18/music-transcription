@@ -51,6 +51,51 @@ a native extension.
 
 ## Next checkpoints
 
+### YourMT3+ pipeline milestone
+
+YourMT3+ is the selected model family. Exact upstream revision, checkpoint,
+tokenizer, frontend, and Linux training dependencies still need to be pinned.
+No TensorFlow training stack or Azure resources have been installed/provisioned.
+
+The first local pipeline layer uses only Python's standard library:
+
+```sh
+scripts/check
+scripts/uv run --frozen python -m bass_pipeline audit --output outputs/data-audit-001.json
+```
+
+Choose a new output name for each audit; reports are ignored by Git and never
+overwritten. The audit verifies published archive checksums, records SHA-256,
+inventories file types and uncompressed size, and rejects dangerous archive paths
+and links. It does not extract files or validate audio/annotation alignment yet.
+
+`configs/pipeline.toml` records the selected family and provisional split,
+excerpt, preprocessing, augmentation, and evaluation settings. The pure functions
+in `bass_pipeline/core.py` provide note validation, deterministic group-level
+split planning, excerpt boundaries, and exact-pitch/onset one-to-one scoring.
+The split proportions target groups rather than seconds or notes. Tiny datasets
+may have empty splits. Audit cross-dataset duplicates before assigning groups.
+
+Split plans are not yet benchmark splits: audit pretrained checkpoint exposure
+(especially SMT-Bass and Slakh), approve assignments, then freeze manifests.
+Notes crossing excerpt boundaries retain original timing; the future YourMT3+
+adapter must encode continuing notes without inventing note onsets.
+
+Remaining pre-GPU work:
+
+1. Safely extract into a new ignored output directory, retaining original archives.
+2. Implement dataset-specific annotation readers: FiloBass fully aligned MIDI,
+   IDMT single-track labels, BabySlakh bass stems paired with per-stem MIDI.
+3. Validate audio headers, note ranges, timing alignment and bass selection;
+   inspect/listen to representative recordings before freezing manifests.
+4. Pin one upstream checkpoint/configuration and implement its data adapter.
+5. Compare the lightweight evaluator with a standard evaluation library, add
+   per-recording reporting and record environment/configuration provenance.
+6. Confirm Azure eligibility, quota, price and shutdown controls before a paid
+   checkpoint-load / short training smoke test.
+
+### Earlier setup checklist (historical)
+
 - Confirm only this repository is registered as the local Codex project and open it in VS Code.
 - Retire the obsolete Documents-level trusted-project setting without changing unrelated settings; this requires separately authorized user-level configuration access.
 - Define the transcription scope, output representation, evaluation datasets, metrics, and held-out split.
