@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bass lab · Annotation review</title>
+<style>
+body{margin:0;background:#101820;color:#e6edf4;font:16px system-ui,sans-serif}main{max-width:1200px;margin:auto;padding:32px}h1{margin-bottom:6px}p{color:#afc1cf;line-height:1.5}.controls{display:flex;gap:16px;flex-wrap:wrap;align-items:end;margin:24px 0}label{display:grid;gap:8px}select,input,button{font:inherit;background:#21313f;color:#fff;border:1px solid #607888;border-radius:6px;padding:9px}button{cursor:pointer}button:disabled{opacity:.45}select{max-width:100%}#recording{max-width:520px}audio{width:100%;margin:12px 0}canvas{width:100%;height:380px;background:#15232e;border:1px solid #405666;border-radius:8px;cursor:crosshair}#status{min-height:24px;color:#80e2c6}table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:8px;text-align:left;border-bottom:1px solid #354856}details{margin:24px 0}#metadata{font-size:14px}a{color:#80e2c6}input[type=checkbox]{width:18px;height:18px}small{color:#afc1cf}.pill{color:#80e2c6;font-size:13px;letter-spacing:2px}button:focus-visible,canvas:focus-visible{outline:3px solid #80e2c6}
+</style>
+<style>
+#load,#refresh{background:#257b67;border-color:#80e2c6;color:white;font-weight:650}button:hover{background:#38586b}#load:hover,#refresh:hover{background:#32947e}#diagnostics{white-space:pre-wrap;background:#1a2a36;padding:16px;max-height:320px;overflow:auto;color:#e6b869}
+</style>
+<main>
+<div class="pill">BASS LAB / LOCAL REVIEW</div>
+<h1>Hear the audio. See the labels.</h1>
+<p>Reference notes: gold blocks. Predictions: mint outlines. Read-only: no review decisions or edits are saved.</p>
+<div class="controls">
+<label>Run / stage<select id="run"></select></label><button id="refresh">Discover runs</button>
+<label>Processing status<select id="filterStatus"><option value="">All active examples</option><option value="failed">Failed / held</option><option value="not_run">Not processed</option><option value="needs_review">Needs review</option><option value="excluded">Explicitly excluded</option></select></label>
+<label>Dataset<select id="dataset"><option value="">All datasets</option><option>filobass</option><option>idmt</option><option>babyslakh</option></select></label>
+<label>Recording<select id="recording"></select></label>
+</div>
+<div id="metadata"></div>
+<details><summary>Processing history and original annotation preview</summary><pre id="diagnostics">Select an example.</pre></details>
+<div id="layers" class="controls"></div>
+<div id="discovery" role="status"></div>
+<div class="controls">
+<label>Start (seconds)<input id="start" type="number" min="0" step="0.1" value="0"></label>
+<label>Window / zoom<select id="length"><option value="5">5 seconds</option><option value="10" selected>10 seconds</option><option value="20">20 seconds</option><option value="30">30 seconds</option></select></label>
+<button id="load">Load window</button><button id="previous">← Previous</button><button id="next">Next →</button>
+<label>Speed<select id="speed"><option value="1">1×</option><option value="0.75">0.75×</option><option value="0.5">0.5×</option></select></label>
+<label>Loop window<input id="loop" type="checkbox"></label>
+</div>
+<div id="status" role="status" aria-live="polite">Loading catalog…</div>
+<audio id="audio" controls preload="auto"></audio>
+<canvas id="plot" tabindex="0" role="img" aria-label="Waveform and MIDI piano roll. Click to seek; use audio controls for keyboard seeking."></canvas>
+<p><small>Top: waveform envelope at original amplitude. Bottom: labeled notes; each horizontal block is one pitch and its duration. Click to seek. Times are absolute recording seconds. Low E on a four-string bass is E1 / MIDI 28.</small></p>
+<details><summary>Notes in this window (accessible table)</summary><table><thead><tr><th>Pitch</th><th>MIDI</th><th>Onset (s)</th><th>Offset (s)</th></tr></thead><tbody id="notes"></tbody></table></details>
+<details><summary id="heldTitle">Held examples</summary><p>These failed our strict reader checks and are not shown in the playable catalog. No labels have been repaired.</p><ul id="held"></ul></details>
+</main>
+<script>
+const $=id=>document.getElementById(id), audio=$('audio'), canvas=$('plot');
+let rows=[], clip=null, sequence=0, audioUrl=null;
+const pitchName=n=>['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'][n%12]+(Math.floor(n/12)-1);
+function selected(){return rows[Number($('recording').value)];}
+function populate(){
+ $('recording').replaceChildren();
+ rows.forEach((row,i)=>{if((!$('dataset').value||row.dataset===$('dataset').value)&&row.run_id===$('run').value&&(!$('filterStatus').value?row.status!=='excluded':row.status===$('filterStatus').value)){const o=new Option(`[${row.status||'needs_review'}] ${row.recording_id}`,String(i));$('recording').add(o);}});
+ resetRecording();
+}
+function resetRecording(){
+ const row=selected();$('start').value=row?.audio_origin||0;$('layers').replaceChildren();
+ (row?.layers||[{id:'reference',kind:'reference'}]).forEach(layer=>{const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=true;input.value=layer.id;input.onchange=draw;label.append(document.createTextNode(layer.id+' ('+layer.kind+')'),input);$('layers').append(label);});load();
+}
+async function checked(url){const r=await fetch(url);if(!r.ok)throw Error('Could not load this window. Check its start time and source files.');return r;}
+async function load(){
+ const ticket=++sequence;audio.pause();audio.removeAttribute('src');audio.load();clip=null;$('notes').replaceChildren();draw();
+ if(audioUrl){URL.revokeObjectURL(audioUrl);audioUrl=null;}
+ const row=selected();if(!row){$('status').textContent='No recordings match this run and dataset.';$('metadata').textContent='';return;}
+ $('diagnostics').textContent=JSON.stringify(row.steps||[],null,2);
+ if(row.uid)checked('/details?'+new URLSearchParams({id:row.uid})).then(r=>r.json()).then(d=>{if(ticket===sequence)$('diagnostics').textContent=JSON.stringify(d.steps,null,2)+'\n'+(d.path||'')+'\n'+(d.notice||'')+'\n'+(d.source||d.error||'No original annotation preview supplied for this run.');}).catch(e=>{if(ticket===sequence)$('diagnostics').textContent=e.message;});
+ if(!row.duration_seconds){$('status').textContent='Audio unavailable or unreadable. Inspect processing history and original annotations.';return;}
+ const start=Number($('start').value),length=Number($('length').value);
+ const origin=row.audio_origin||0;
+ if(!Number.isFinite(start)||start<origin||start>=origin+row.duration_seconds){$('status').textContent='Choose a start within the recording.';return;}
+ $('status').textContent='Decoding audio and loading reference notes…';
+ $('metadata').textContent=`${row.stage||'ingestion'} · ${row.duration_seconds.toFixed(1)} s · ${row.dataset||'unspecified dataset'} · source: ${row.source_recording_id||row.recording_id} · audio origin: ${origin}s`+((row.warnings||[]).length?' · Warning: '+row.warnings.join('; '):'');
+ try{
+  const q=new URLSearchParams({id:row.uid||$('recording').value,start,length});
+  const [meta,blob]=await Promise.all([checked('/clip?'+q).then(r=>r.json()),checked('/audio?'+q).then(r=>r.blob())]);
+  if(ticket!==sequence)return;
+  clip=meta;audioUrl=URL.createObjectURL(blob);audio.src=audioUrl;audio.playbackRate=Number($('speed').value);
+  $('status').textContent=`${row.status||'needs_review'} · ${clip.start.toFixed(3)}–${clip.end.toFixed(3)} s · ${clip.notes.length} overlapping notes · alignment not yet verified`+(!row.layers?.length?' · Audio only: no converted annotations.':'')+((clip.layer_errors||[]).length?' · Label errors: '+clip.layer_errors.join('; '):'');
+  $('notes').replaceChildren();
+  clip.notes.forEach(n=>{const tr=document.createElement('tr');[pitchName(n.pitch_midi)+' · '+n.layer,n.pitch_midi,n.onset_seconds.toFixed(3),n.offset_seconds.toFixed(3)].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.append(td);});$('notes').append(tr);});draw();
+ }catch(e){if(ticket===sequence)$('status').textContent=e.message;}
+}
+function draw(){
+ const w=canvas.clientWidth,h=380,dpr=devicePixelRatio||1;
+ if(canvas.width!==Math.round(w*dpr)){canvas.width=Math.round(w*dpr);canvas.height=h*dpr;}
+ const c=canvas.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);if(!clip)return;
+ const left=64,right=w-12,span=clip.end-clip.start,x=t=>left+(t-clip.start)/span*(right-left);
+ c.font='12px system-ui';c.fillStyle='#afc1cf';c.fillText('Audio',8,45);
+ c.strokeStyle='#80e2c6';c.beginPath();clip.peaks.forEach((p,i)=>{const px=left+i/clip.peaks.length*(right-left);c.moveTo(px,45-p*32);c.lineTo(px,45+p*32);});c.stroke();
+ const pitches=clip.notes.map(n=>n.pitch_midi),lo=Math.min(28,...pitches)-1,hi=Math.max(43,...pitches)+1,rh=260/(hi-lo+1);
+ for(let p=lo;p<=hi;p++){const y=90+(hi-p)*rh;c.fillStyle=p%12===0?'#263d4e':'#1a2a36';c.fillRect(left,y,right-left,rh-1);if(rh>9){c.fillStyle='#afc1cf';c.fillText(pitchName(p),6,y+rh*.8);}}
+ // Minor ticks use source seconds, not slowed playback time. Short, unlabeled
+ // marks keep the piano roll readable even for the longest window.
+ const tickStep=Number($('speed').value)===0.5?0.1:0.5;
+ c.strokeStyle='#526674';c.lineWidth=1;c.beginPath();
+ for(let k=Math.ceil((clip.start-1e-9)/tickStep);k*tickStep<=clip.end+1e-9;k++){
+  const px=x(k*tickStep);c.moveTo(px,350);c.lineTo(px,354);
+ }c.stroke();
+ c.strokeStyle='#405666';for(let i=0;i<=5;i++){const t=clip.start+span*i/5,px=x(t);c.beginPath();c.moveTo(px,85);c.lineTo(px,350);c.stroke();c.fillStyle='#afc1cf';c.fillText(t.toFixed(2)+'s',Math.min(px-14,w-56),373);}
+ const enabled=new Set([...$('layers').querySelectorAll('input:checked')].map(i=>i.value));
+ clip.notes.filter(n=>enabled.has(n.layer)).forEach(n=>{const a=x(Math.max(clip.start,n.onset_seconds)),b=x(Math.min(clip.end,n.offset_seconds)),y=90+(hi-n.pitch_midi)*rh+1;if(n.kind==='prediction'){c.strokeStyle='#80e2c6';c.lineWidth=2;c.strokeRect(a,y,Math.max(2,b-a),Math.max(2,rh-2));c.lineWidth=1;}else{c.fillStyle='#e6b869';c.fillRect(a,y,Math.max(2,b-a),Math.max(2,rh-2));}});
+ const px=x(clip.start+(audio.currentTime||0));c.strokeStyle='#fff';c.lineWidth=2;c.beginPath();c.moveTo(px,8);c.lineTo(px,350);c.stroke();c.lineWidth=1;
+}
+$('filterStatus').onchange=populate;$('dataset').onchange=populate;$('run').onchange=populate;$('recording').onchange=resetRecording;$('load').onclick=load;$('length').onchange=load;
+$('previous').onclick=()=>{$('start').value=Math.max(selected()?.audio_origin||0,Number($('start').value)-Number($('length').value));load();};
+$('next').onclick=()=>{const row=selected();if(!row)return;const origin=row.audio_origin||0;$('start').value=Math.max(origin,Math.min(origin+row.duration_seconds-0.1,Number($('start').value)+Number($('length').value)));load();};
+$('speed').onchange=()=>{audio.playbackRate=Number($('speed').value);draw();};$('loop').onchange=()=>audio.loop=$('loop').checked;
+canvas.onclick=e=>{if(clip)audio.currentTime=Math.max(0,Math.min(clip.end-clip.start,(e.clientX-canvas.getBoundingClientRect().left-64)/(canvas.clientWidth-76)*(clip.end-clip.start)));};
+audio.onerror=()=>{$('status').textContent='Audio playback failed; reload the window.';};
+function animate(){if(!audio.paused)draw();requestAnimationFrame(animate);}animate();audio.onseeked=draw;audio.onended=draw;window.onresize=draw;
+async function discover(){try{const data=await checked('/catalog').then(r=>r.json());rows=data.rows;rows.forEach(r=>r.run_id=r.run_id||'Selected manifest');$('run').replaceChildren();[...new Set(rows.map(r=>r.run_id))].forEach(r=>$('run').add(new Option(r,r)));$('dataset').replaceChildren(new Option('All datasets',''));[...new Set(rows.map(r=>r.dataset).filter(Boolean))].forEach(d=>$('dataset').add(new Option(d,d)));$('held').replaceChildren();$('heldTitle').textContent=`Held examples (${data.report.quarantined.length})`;data.report.quarantined.forEach(item=>{const li=document.createElement('li');li.textContent=item.recording_id+': '+item.reason;$('held').append(li);});$('discovery').textContent=(data.report.discovery_errors||[]).join(' | ');populate();if(!rows.length)$('status').textContent='No viewable runs found. Add a viewer.json in a discovery directory.';}catch(e){$('status').textContent=e.message;}}
+$('refresh').onclick=discover;discover();
+</script>
+</html>

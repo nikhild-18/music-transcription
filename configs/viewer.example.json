@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "run_id": "inference/example-001",
+  "stage": "inference",
+  "source_run_id": "data/processed/v1",
+  "configuration": {"checkpoint": "PIN_BEFORE_RUNNING"},
+  "recordings": [
+    {
+      "recording_id": "example-recording-crop45",
+      "source_recording_id": "example-recording",
+      "dataset": "example",
+      "duration_seconds": 10,
+      "audio": {
+        "path": "outputs/inference/example-001/audio/crop.wav",
+        "time_origin_seconds": 45
+      },
+      "layers": [
+        {
+          "id": "reference",
+          "kind": "reference",
+          "path": "data/processed/example/notes/reference.json",
+          "time_origin_seconds": 0
+        },
+        {
+          "id": "prediction",
+          "kind": "prediction",
+          "path": "outputs/inference/example-001/notes/prediction.json",
+          "time_origin_seconds": 45
+        }
+      ]
+    }
+  ]
+}

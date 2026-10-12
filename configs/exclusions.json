@@ -1,0 +1,7 @@
+{
+  "babyslakh-Track00017-S04": {
+    "reason": "Owner requested exclusion: metadata entry has no stem MIDI or audio file.",
+    "scope": "babyslakh source metadata entry",
+    "training_eligible": false
+  }
+}

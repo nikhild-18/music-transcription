@@ -136,9 +136,22 @@ def build_manifest(root: Path, extracted: Path, output: Path) -> dict:
     output.mkdir(parents=True)
     (output / "notes").mkdir()
     rows, rejected = [], []
+    exclusion_path = root / "configs/exclusions.json"
+    exclusions = (
+        json.loads(exclusion_path.read_text()) if exclusion_path.exists() else {}
+    )
 
     def add(dataset, key, audio, labels, reader, context, bass_type, metadata=None):
         record_id = f"{dataset}-{key}"
+        if record_id in exclusions:
+            rejected.append(
+                {
+                    "recording_id": record_id,
+                    "status": "excluded",
+                    "reason": exclusions[record_id]["reason"],
+                }
+            )
+            return
         try:
             notes = reader(labels)
             if not notes:
@@ -249,6 +262,32 @@ def build_manifest(root: Path, extracted: Path, output: Path) -> dict:
     for row in rows:
         counts[row["dataset"]] += 1
     write_json(output / "manifest.json", rows)
+    write_json(
+        output / "viewer.json",
+        {
+            "schema_version": "1.0",
+            "run_id": str(output.relative_to(root)),
+            "stage": "ingestion",
+            "recordings": [
+                {
+                    "recording_id": r["recording_id"],
+                    "dataset": r["dataset"],
+                    "duration_seconds": r["duration_seconds"],
+                    "audio": {"path": r["audio_path"], "time_origin_seconds": 0},
+                    "layers": [
+                        {
+                            "id": "reference",
+                            "kind": "reference",
+                            "path": r["annotation_path"],
+                            "time_origin_seconds": 0,
+                        }
+                    ],
+                    "warnings": r["warnings"],
+                }
+                for r in rows
+            ],
+        },
+    )
     report = {
         "created_utc": datetime.now(UTC).isoformat(),
         "accepted": dict(counts),

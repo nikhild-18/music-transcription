@@ -31,6 +31,106 @@
 
 ## Local workflow
 
+### Review-only correction diagnostics
+
+```sh
+scripts/uv run --frozen python -m bass_pipeline.diagnose --threshold-ms 20 --orphan-pitch --output outputs/correction-diagnostics-v1.json
+```
+
+This never alters MIDI, training labels or prior reports. The 20 ms proximity
+report compares adjacent starts of the same channel/pitch; it flags intervening
+stops and does not perform transitive merges. The optional orphan diagnostic uses
+bounded FFT autocorrelation on CPU, no learned model or new dependencies. Default
+search limit is 5 seconds before a leading orphan stop, using 128 ms frames and
+10 ms hops. Evidence must persist for three frames, with periodicity >=0.8,
+RMS >=0.0001 and pitch within 50 cents. These are provisional heuristic settings
+in PitchConfig, not calibrated confidence or guaranteed error bounds.
+
+Outputs distinguish carry-in candidates (already sounding, onset unknown), coarse
+onset-region candidates, and unresolved cases. There is no automatic stop deletion.
+BoundaryNote explicitly uses null onset and already_sounding=true; it is separate
+from the existing Note schema and must not enter onset training/scoring as a zero
+onset. Model tie-token integration is still pending. Diagnosis can confuse octave
+harmonics, bleed and noise; real recordings require review beyond synthetic tests.
+
+Owner exclusions live in configs/exclusions.json and are honored by preparation,
+source inspection and diagnostics. Track00017-S04 is excluded because both its
+stem audio and MIDI are absent. No original file was deleted. Historical outputs
+remain unchanged; source inspection shows exclusions only under Explicitly excluded.
+
+### Local annotation viewer
+
+The viewer additionally inventories known dataset layouts beneath each version
+directory in `data/extracted/`. Select a **source inventory** run to inspect all
+discovered FiloBass/IDMT recordings and BabySlakh bass metadata entries, including
+missing pairs. This inventory is read-only and reconstructed on discovery; it does
+not modify historical manifests or approve anything for training. New dataset
+formats still need an inventory adapter or an explicit viewer descriptor.
+
+Filter by **Failed / held**, **Not processed**, or **Needs review**. Audio remains
+playable when labels are absent or unreadable. Expand processing history to inspect
+availability checks, historical preparation outcomes, source paths and a bounded
+raw MIDI/XML preview. MIDI preview times are delta ticks, not canonical seconds.
+Malformed note layers are reported without blocking audio. Missing audio remains
+visible but is not playable. Raw compressed archives are not playable; extraction
+must happen first. Existing legacy reports lack precise stage codes, so their
+errors are explicitly labeled **legacy preparation**, not guessed stages.
+
+Structural success is **needs review**, not training approval. No approvals or
+repairs are saved. Source inventory only reads audio headers; it does not imply
+full audio validation. Historical outcomes are attached to the same source tree;
+multiple historical attempts remain listed in processing history.
+
+The default viewer now discovers `viewer.json` recursively under
+`data/processed`, `outputs/preprocessing`, `outputs/inference`, and
+`outputs/evaluation`. Click **Discover runs** (or refresh the page) after creating
+a run; no server restart is needed. Legacy `manifest.json` catalogs under
+`data/processed` remain supported when no sibling viewer.json exists.
+New preparation runs automatically emit a descriptor; existing outputs are untouched.
+
+Use `configs/viewer.example.json` as the contract for new stages, saving the
+completed descriptor as `viewer.json` alongside each run's outputs. Write the
+descriptor last, after its referenced files are complete. Paths are relative to
+the repository root, never the descriptor. Each recording has a stable ID, dataset,
+audio duration, one audio path and zero or more reference/prediction note layers.
+Notes are JSON arrays in our canonical pitch/onset/offset format.
+
+Every audio and note layer declares `time_origin_seconds`: the original recording
+time corresponding to its local zero. Full-song files use 0; a crop starting at
+45 seconds uses 45. Already-absolute notes use 0 even when audio is cropped.
+The viewer adds this origin once to put layers on the same source timeline.
+This contract supports offsets, not time stretching; time-warped outputs must
+map their notes back to source time or be inspected as a separate timeline.
+
+Select a run and recording, then toggle layers: reference notes are gold filled
+blocks; predictions are mint outlines. For original/processed audio comparison,
+publish separate recordings/runs with `source_recording_id` linking them. There
+is no simultaneous A/B playback yet. Configuration and source-run metadata may be
+included in descriptors, but are not yet rendered. Invalid descriptors appear as
+discovery warnings. Unsupported tensors/spectrograms are not rendered yet.
+
+```sh
+scripts/uv run --frozen python -m bass_pipeline.viewer
+```
+
+Open http://127.0.0.1:8765 in a browser. Stop the server with Ctrl-C.
+The server binds only to loopback, reads the processed v1 manifest, and exposes
+only the catalog and bounded audio clips (not arbitrary repository files).
+Use `--port 8766` if needed, or `--manifest data/processed/v2/manifest.json`
+for a later manifest with a sibling report.json.
+
+Choose a dataset/recording and a 5–30 second window. Audio controls support
+playback, slower speed, and looping; click the waveform/piano roll to seek.
+The plot and note table retain absolute recording timestamps, including notes
+that began before the current window. Reference labels are not model predictions.
+Browser playback uses temporary in-memory 16-bit WAV clips at the original sample
+rate without normalization; original files are unchanged. The waveform envelope
+uses maximum amplitude across channels. This is a review aid, not a sample-accurate
+audio editor. No approval decisions, corrections or annotations are saved yet.
+
+Held examples are listed separately; they cannot yet be inspected with converted
+notes. No third-party scripts, telemetry, cloud services, or model are required.
+
 Run project commands through `scripts/uv`. The wrapper redirects uv's cache and
 managed Python directories into ignored repository paths, avoiding user-level
 configuration and storage.
