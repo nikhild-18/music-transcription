@@ -11,8 +11,14 @@ import mido
 
 from bass_pipeline.audit import repository_path
 from bass_pipeline.inventory import source_inventory
+from bass_pipeline.midi_diagnostics import midi_issues
 from bass_pipeline.prepare import write_json
-from bass_pipeline.repair import PitchConfig, pitch_evidence
+from bass_pipeline.repair import (
+    PitchConfig,
+    SilenceConfig,
+    pitch_evidence,
+    silence_evidence,
+)
 
 
 def leading_stops(path):
@@ -108,6 +114,12 @@ def main():
             continue
         entry = {"recording_id": row["recording_id"], "source_path": source}
         try:
+            entry["structural_issues"] = midi_issues(repository_path(root, source))
+            for issue in entry["structural_issues"]:
+                if issue["code"] == "orphan_stop" and issue["leading"]:
+                    issue["silence_evidence"] = silence_evidence(
+                        repository_path(root, row["audio_path"]), issue["start_seconds"]
+                    )
             entry["candidates"] = nearby_starts(
                 repository_path(root, source), args.threshold_ms
             )
@@ -133,6 +145,7 @@ def main():
         "recordings": results,
         "elapsed_seconds": time.perf_counter() - started,
         "pitch_config": asdict(PitchConfig()) if args.orphan_pitch else None,
+        "silence_config": asdict(SilenceConfig()),
     }
     write_json(destination, report)
     print(

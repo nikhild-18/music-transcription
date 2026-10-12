@@ -1,0 +1,17 @@
+[
+  {
+    "id": "uncertain-region-1",
+    "start_seconds": 0.5,
+    "end_seconds": 1.2,
+    "label": "Uncertain region",
+    "severity": "warning",
+    "status": "review_only",
+    "details": {"reason": "Example interval; replace with producer evidence."}
+  },
+  {
+    "id": "checkpoint-1",
+    "start_seconds": 2,
+    "label": "Review this instant",
+    "severity": "info"
+  }
+]

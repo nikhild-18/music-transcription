@@ -4,8 +4,81 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
+import mido
 import numpy as np
 import soundfile as sf
+
+
+def remove_silent_leading_stops(midi_path, audio_path, destination):
+    """Write a derived MIDI, retaining delta time when an approved stop is removed."""
+    from bass_pipeline.midi_diagnostics import midi_issues
+
+    removed = []
+    for issue in midi_issues(midi_path):
+        if issue["code"] == "orphan_stop" and issue["leading"]:
+            evidence = silence_evidence(audio_path, issue["start_seconds"])
+            if evidence["eligible"]:
+                removed.append({**issue, "silence_evidence": evidence})
+    if not removed:
+        return []
+    if destination.exists():
+        raise FileExistsError(destination)
+    midi = mido.MidiFile(midi_path)
+    indices = {issue["event_index"] for issue in removed}
+    track, carry = mido.MidiTrack(), 0
+    for index, event in enumerate(mido.merge_tracks(midi.tracks)):
+        if index in indices:
+            carry += event.time
+        else:
+            track.append(event.copy(time=event.time + carry))
+            carry = 0
+    result = mido.MidiFile(type=0, ticks_per_beat=midi.ticks_per_beat)
+    result.tracks.append(track)
+    with destination.open("xb") as stream:
+        result.save(file=stream)
+    return removed
+
+
+@dataclass(frozen=True)
+class SilenceConfig:
+    max_seconds: float = 5
+    min_seconds: float = 0.05
+    frame_seconds: float = 0.02
+    max_peak_dbfs: float = -50
+    max_frame_rms_dbfs: float = -60
+
+
+def silence_evidence(audio, stop, config=SilenceConfig()):
+    """Require low energy in every channel/frame before a leading stop.
+
+    An amplitude heuristic, not proof that no very quiet note exists. Never
+    normalize before measuring, and never use missing pitch as silence evidence.
+    """
+    result = {"eligible": False, "rule": "quiet-prefix-v1"}
+    if not math.isfinite(stop) or not config.min_seconds <= stop <= config.max_seconds:
+        return {**result, "reason": "prefix duration outside safe scan bounds"}
+    with sf.SoundFile(audio) as stream:
+        count = int(stop * stream.samplerate)
+        data = stream.read(count, always_2d=True)
+        frame = max(1, round(config.frame_seconds * stream.samplerate))
+    if len(data) != count or not len(data) or not np.isfinite(data).all():
+        return {**result, "reason": "incomplete or nonfinite audio"}
+    peak = float(np.max(np.abs(data)))
+    rms = max(
+        float(np.sqrt(np.mean(data[i : i + frame] ** 2, axis=0)).max())
+        for i in range(0, len(data), frame)
+    )
+    peak_db = 20 * math.log10(max(peak, 1e-20))
+    rms_db = 20 * math.log10(max(rms, 1e-20))
+    return {
+        **result,
+        "eligible": peak_db <= config.max_peak_dbfs
+        and rms_db <= config.max_frame_rms_dbfs,
+        "peak_dbfs": peak_db,
+        "max_frame_rms_dbfs": rms_db,
+        "scanned_until_seconds": stop,
+        "reason": "every channel: peak and 20 ms energy gates",
+    }
 
 
 @dataclass(frozen=True)

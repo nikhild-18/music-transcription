@@ -10,11 +10,13 @@ from urllib.parse import parse_qs, urlsplit
 
 import mido
 import numpy as np
+import pedalboard
 import soundfile as sf
 
 from bass_pipeline.artifacts import discover
 from bass_pipeline.audit import repository_path
 from bass_pipeline.core import Note
+from bass_pipeline.events import read_events
 
 
 class Catalog:
@@ -59,7 +61,13 @@ class Catalog:
                 result["error"] = str(error)
         return result
 
-    def clip(self, index: int, start: float, length: float):
+    def events(self, uid):
+        row = next(r for r in self.rows if r.get("uid") == uid)
+        return read_events(self.root, row.get("layers", []))
+
+    def clip(self, index: int, start: float, length: float, playback_rate: float = 1):
+        if playback_rate not in (0.5, 0.75, 1):
+            raise ValueError("unsupported playback rate")
         if isinstance(index, str):
             index = next(
                 (i for i, r in enumerate(self.rows) if r.get("uid") == index), -1
@@ -99,6 +107,8 @@ class Catalog:
         selected = []
         layer_errors = []
         for layer in layers:
+            if layer["kind"] == "events":
+                continue
             try:
                 notes = json.loads(
                     repository_path(self.root, layer["path"]).read_text()
@@ -132,6 +142,16 @@ class Catalog:
                 if n["onset_seconds"] < end and n["offset_seconds"] > start:
                     selected.append(n)
         output = io.BytesIO()
+        if playback_rate != 1:
+            data = pedalboard.time_stretch(
+                np.ascontiguousarray(data.T, dtype=np.float32),
+                rate,
+                stretch_factor=playback_rate,
+                pitch_shift_in_semitones=0,
+                high_quality=True,
+                transient_mode="crisp",
+                use_long_fft_window=False,
+            ).T
         sf.write(output, data, rate, format="WAV", subtype="PCM_16")
         return {
             "start": start,
@@ -160,6 +180,9 @@ def make_handler(catalog: Catalog):
                 if url.path == "/":
                     body = Path(__file__).with_name("viewer.html").read_bytes()
                     kind = "text/html; charset=utf-8"
+                elif url.path == "/player.js":
+                    body = Path(__file__).with_name("player.js").read_bytes()
+                    kind = "text/javascript; charset=utf-8"
                 elif url.path == "/catalog":
                     catalog.refresh()
                     body = json.dumps(
@@ -171,6 +194,11 @@ def make_handler(catalog: Catalog):
                         catalog.details(parse_qs(url.query)["id"][0])
                     ).encode()
                     kind = "application/json"
+                elif url.path == "/events":
+                    body = json.dumps(
+                        catalog.events(parse_qs(url.query)["id"][0])
+                    ).encode()
+                    kind = "application/json"
                 elif url.path in ("/clip", "/audio"):
                     query = parse_qs(url.query)
                     meta, wav = catalog.clip(
@@ -179,6 +207,9 @@ def make_handler(catalog: Catalog):
                         else int(query["id"][0]),
                         float(query["start"][0]),
                         float(query["length"][0]),
+                        float(query.get("rate", ["1"])[0])
+                        if url.path == "/audio"
+                        else 1,
                     )
                     body = wav if url.path == "/audio" else json.dumps(meta).encode()
                     kind = "audio/wav" if url.path == "/audio" else "application/json"
@@ -203,7 +234,7 @@ def make_handler(catalog: Catalog):
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'self'; "
-                "script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+                "script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; "
                 "media-src 'self' blob:; frame-ancestors 'none'",
             )
             self.end_headers()

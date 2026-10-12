@@ -6,6 +6,7 @@ import pytest
 import soundfile as sf
 
 from bass_pipeline.artifacts import discover
+from bass_pipeline.sync_check import publish as publish_sync
 from bass_pipeline.viewer import Catalog
 
 
@@ -155,3 +156,62 @@ def test_broken_layer_does_not_block_audio(tmp_path):
     assert meta["layer_errors"]
     assert not meta["notes"]
     assert wav
+
+
+def test_waveform_and_delivered_pcm_share_impulse_timing(tmp_path):
+    publish_sync(tmp_path, tmp_path / "outputs/diagnostics/sync")
+    catalog = Catalog(tmp_path)
+    uid = catalog.rows[0]["uid"]
+    for start in (0, 0.3, 2.125):
+        meta, wav = catalog.clip(uid, start, 3)
+        samples, rate = sf.read(io.BytesIO(wav), always_2d=True)
+        assert len(samples) / rate == pytest.approx(meta["end"] - meta["start"])
+        peaks = [
+            float(chunk.max())
+            for chunk in np.array_split(
+                np.max(np.abs(samples), axis=1), len(meta["peaks"])
+            )
+        ]
+        np.testing.assert_allclose(peaks, meta["peaks"], atol=1 / 32768)
+        for second in range(1, 6):
+            if meta["start"] <= second < meta["end"]:
+                frame = round((second - meta["start"]) * rate)
+                assert samples[frame, 0] > 0.14
+                if frame:
+                    assert samples[frame - 1, 0] == 0
+    assert len(catalog.events(uid)["events"]) == 5
+    with pytest.raises(FileExistsError):
+        publish_sync(tmp_path, tmp_path / "outputs/diagnostics/sync")
+
+
+@pytest.mark.parametrize("rate", [0.5, 0.75])
+def test_stretched_preview_preserves_pitch_and_source_timeline(tmp_path, rate):
+    sr = 16000
+    t = np.arange(sr * 4) / sr
+    sf.write(tmp_path / "tone.wav", 0.1 * np.sin(2 * np.pi * 110 * t), sr)
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps([{"audio_path": "tone.wav", "layers": []}]))
+    (tmp_path / "report.json").write_text('{"quarantined": []}')
+    meta, wav = Catalog(tmp_path, manifest).clip(0, 0, 4, rate)
+    signal, sample_rate = sf.read(io.BytesIO(wav))
+    assert len(signal) / sample_rate == pytest.approx(4 / rate, abs=1 / sr)
+    assert meta["end"] == 4  # Not the stretched playback duration.
+    middle = signal[sr : 2 * sr]
+    frequency = np.argmax(np.abs(np.fft.rfft(middle * np.hanning(len(middle)))))
+    assert abs(frequency - 110) <= 1
+
+
+def test_stretched_reference_clicks_remain_near_source_markers(tmp_path):
+    publish_sync(tmp_path, tmp_path / "outputs/diagnostics/sync")
+    catalog = Catalog(tmp_path)
+    uid = catalog.rows[0]["uid"]
+    for rate in (0.5, 0.75):
+        _, wav = catalog.clip(uid, 0, 6, rate)
+        signal, sr = sf.read(io.BytesIO(wav))
+        for second in range(1, 6):
+            lo, hi = (
+                round((second / rate - 0.1) * sr),
+                round((second / rate + 0.1) * sr),
+            )
+            peak = (lo + np.argmax(abs(signal[lo:hi]))) / sr * rate
+            assert abs(peak - second) < 0.025  # preview only; not label retiming

@@ -13,6 +13,7 @@ ROOTS = (
     "outputs/preprocessing",
     "outputs/inference",
     "outputs/evaluation",
+    "outputs/diagnostics",
 )
 
 
@@ -42,15 +43,15 @@ def discover(root: Path):
                     audio_exists = repository_path(root, audio["path"]).is_file()
                     origin = offset(audio["time_origin_seconds"])
                     duration = row["duration_seconds"]
-                    if not math.isfinite(duration) or duration <= 0:
+                    if not math.isfinite(duration) or duration < 0:
                         raise ValueError("invalid duration")
                     layer_ids = set()
                     for layer in row["layers"]:
                         if layer["id"] in layer_ids:
                             raise ValueError("duplicate layer ID")
                         layer_ids.add(layer["id"])
-                        if layer["kind"] not in ("reference", "prediction"):
-                            raise ValueError("unsupported note layer kind")
+                        if layer["kind"] not in ("reference", "prediction", "events"):
+                            raise ValueError("unsupported layer kind")
                         offset(layer["time_origin_seconds"])
                         repository_path(root, layer["path"])
                     uid = hashlib.sha256(
@@ -62,6 +63,7 @@ def discover(root: Path):
                             "uid": uid,
                             "run_id": spec["run_id"],
                             "stage": spec["stage"],
+                            "provenance": spec.get("provenance", {}),
                             "audio_path": audio["path"],
                             "audio_origin": origin,
                             "warnings": row.get("warnings", []),

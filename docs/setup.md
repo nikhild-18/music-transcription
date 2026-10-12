@@ -47,7 +47,7 @@ RMS >=0.0001 and pitch within 50 cents. These are provisional heuristic settings
 in PitchConfig, not calibrated confidence or guaranteed error bounds.
 
 Outputs distinguish carry-in candidates (already sounding, onset unknown), coarse
-onset-region candidates, and unresolved cases. There is no automatic stop deletion.
+onset-region candidates, and unresolved cases. Diagnosis never deletes stops.
 BoundaryNote explicitly uses null onset and already_sounding=true; it is separate
 from the existing Note schema and must not enter onset training/scoring as a zero
 onset. Model tie-token integration is still pending. Diagnosis can confuse octave
@@ -59,6 +59,92 @@ stem audio and MIDI are absent. No original file was deleted. Historical outputs
 remain unchanged; source inspection shows exclusions only under Explicitly excluded.
 
 ### Local annotation viewer
+
+The structural MIDI diagnostic now scans beyond the first parser failure and
+reports all overlapping starts, orphan stops, and remaining unclosed starts with
+timestamps. Ambiguous pairing is counted, not exported as guessed note labels.
+These findings become orange markers using the generic event layer. Non-timestamped
+file/decode failures remain in processing history; no invented timestamp is assigned.
+
+An opt-in derived repair is available through `publish_diagnostics`:
+
+```sh
+scripts/uv run --frozen python -m bass_pipeline.diagnose --threshold-ms 20 --orphan-pitch --output outputs/correction-diagnostics-v2.json
+scripts/uv run --frozen python -m bass_pipeline.publish_diagnostics --report outputs/correction-diagnostics-v2.json --output outputs/diagnostics/correction-review-v2 --repair-recording filobass-Sonnymoon-for-Two --repair-recording filobass-Star-Eyes
+```
+
+The `quiet-prefix-v1` rule removes only a leading unmatched stop, before any start
+of that channel/pitch, if the entire preceding audio (0.05–5 seconds) is available
+and finite, every channel's peak is <= -50 dBFS, and every 20 ms frame's RMS is
+<= -60 dBFS. Thresholds live in `SilenceConfig`; no normalization is applied.
+This is an amplitude heuristic, not proof of silence: quiet genuine notes could
+fall below it. It is not automatically enabled for all datasets or training.
+Each named recording gets a new MIDI with elapsed time preserved across removed
+events, plus an audit of measurements and the source MIDI hash. Original files
+and prior runs are never overwritten. Remaining structural errors still block
+canonical notes. Both named songs still have overlaps after removing their leading
+stop; their removed-stop markers are explicitly marked `removed_in_derived_midi`.
+
+Playback timing: the default **Audio clock** engine schedules decoded PCM with
+Web Audio and draws the cursor from the same schedule, using `getOutputTimestamp`
+when available (otherwise a base/output-latency estimate). It does not add an
+arbitrary 200 ms correction or modify labels. Slow previews use pinned
+Pedalboard/Rubber Band time stretching before playback. The rendered buffer plays
+at unity rate while the cursor maps back to source seconds; pitch is preserved.
+Changing speed renders a new preview and retains the cursor position. The old
+browser playback mode has been removed. Compare sound with the white plot line.
+Processing is CPU-based and bounded to the selected 1–30 s window. Stretching can
+soften or move transients: use 1x for precise onset judgments. Synthetic tests
+bound click-peak displacement to 25 ms source time, not a guarantee for music.
+Pedalboard uses GPL-licensed Rubber Band: review redistribution licensing before
+packaging/publishing an application; this is not a permissive-only dependency.
+Device timestamps are best-effort, not proof of acoustic/Bluetooth calibration.
+
+Generate an independent timing reference (refuses an existing output directory):
+
+```sh
+scripts/uv run --frozen python -m bass_pipeline.sync_check --output outputs/diagnostics/playback-sync-v1
+```
+
+This emits quiet tone bursts with exact onsets at 1, 2, 3, 4, and 5 seconds,
+using the same artifact contract as every other run. Compare speeds at 1x
+and 0.5x, first on built-in/wired audio if possible. Tone onsets should coincide
+with the cursor crossing orange markers. Python tests verify WAV/peak alignment;
+`node --test tests/player.test.js` (Node 18+) tests clock mapping and transport
+state without audio hardware. These JS tests are separate from `scripts/check`.
+No microphone/system-audio recording is performed. Human listening confirmation
+is still needed before claiming the reported perceptual offset is resolved.
+
+The viewer supports generic `events` layers alongside `reference` and `prediction`
+note layers. Each event JSON array item has a unique string `id`, a `label`,
+`start_seconds`, optional `end_seconds` (omitted means a point), and optional
+`severity` (`info`, `warning`, `error`), `status`, and `details`. End must not precede
+start. Layer `time_origin_seconds` maps these times to the source timeline once.
+This format is algorithm-independent: diagnostics, evaluation mistakes, and
+uncertain regions can all publish it. Events do not change training labels.
+
+Publish an existing diagnostic report into a new, discoverable run:
+
+```sh
+scripts/uv run --frozen python -m bass_pipeline.publish_diagnostics --report outputs/correction-diagnostics-v1.json --output outputs/diagnostics/correction-review-v1
+```
+
+Existing destinations are refused. This adapter emits event files per recording
+and writes `viewer.json` last. It retains source IDs, source inspection status,
+available note layers, and report hash/configuration provenance. It does not
+re-run diagnostics. Without `--repair-recording` it makes no repairs.
+Discovery also searches `outputs/diagnostics`.
+Select the published run; orange markers and the expandable event list expose
+findings, evidence, and jump-to-time buttons. Layer checkboxes control events too.
+The `?run=correction-review-v1` URL selects that run explicitly.
+
+Event loading is independent of audio/note loading; a missing or malformed layer
+does not hide the other layers. Audio remains windowed; event JSON is loaded for
+the selected recording, not the whole corpus. Very large per-recording event
+files will eventually need pagination/indexing. Run provenance is visible in its
+own panel. See `configs/events.example.json` for point/interval examples.
+The ruler has 0.5 s minor ticks (0.1 s at half speed) and faint guides.
+This is still a read-only inspection tool, not a repair approval editor.
 
 The viewer additionally inventories known dataset layouts beneath each version
 directory in `data/extracted/`. Select a **source inventory** run to inspect all
@@ -105,8 +191,8 @@ map their notes back to source time or be inspected as a separate timeline.
 Select a run and recording, then toggle layers: reference notes are gold filled
 blocks; predictions are mint outlines. For original/processed audio comparison,
 publish separate recordings/runs with `source_recording_id` linking them. There
-is no simultaneous A/B playback yet. Configuration and source-run metadata may be
-included in descriptors, but are not yet rendered. Invalid descriptors appear as
+is no simultaneous A/B playback yet. Configuration and source-run metadata placed
+inside `provenance` are rendered in the Run provenance panel. Invalid descriptors appear as
 discovery warnings. Unsupported tensors/spectrograms are not rendered yet.
 
 ```sh

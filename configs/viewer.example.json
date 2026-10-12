@@ -3,7 +3,7 @@
   "run_id": "inference/example-001",
   "stage": "inference",
   "source_run_id": "data/processed/v1",
-  "configuration": {"checkpoint": "PIN_BEFORE_RUNNING"},
+  "provenance": {"source_run_id": "data/processed/v1", "configuration": {"checkpoint": "PIN_BEFORE_RUNNING"}},
   "recordings": [
     {
       "recording_id": "example-recording-crop45",
@@ -25,6 +25,12 @@
           "id": "prediction",
           "kind": "prediction",
           "path": "outputs/inference/example-001/notes/prediction.json",
+          "time_origin_seconds": 45
+        },
+        {
+          "id": "review-findings",
+          "kind": "events",
+          "path": "outputs/inference/example-001/events/findings.json",
           "time_origin_seconds": 45
         }
       ]
